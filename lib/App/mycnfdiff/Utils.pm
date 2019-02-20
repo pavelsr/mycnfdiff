@@ -14,14 +14,17 @@ use Data::Dumper;
 
 use Const::Fast;
 const my $ALLOWED_EXTENSIONS_REGEX => qr/\.ini|cnf$/;
+const my $NO_PARAM_MSG => 'EMPTY';
 
 require Exporter;
 our @ISA       = qw(Exporter);
 our @EXPORT_OK = qw(
   get_folder
   get_configs
+  get_compiled_param
   compare
   split_compare_hash
+  _match
 );
 our %EXPORT_TAGS = ( 'all' => [@EXPORT_OK] );
 
@@ -60,26 +63,65 @@ sub get_configs {
     my (%opts) = @_;
 
     my $result = {};
+    my @compiled_to_analyse;
 
     if ( @{ $opts{'include_only'} } ) {
-        for my $filename ( @{ $opts{'include_only'} } ) {
-            # to-do: resolve compiled defaults exec: tag
-            # _detect_compiled_defaults_format
-            $result->{$filename} = Config::MySQL::Reader->read_file($filename);
+        
+        for my $source ( @{ $opts{'include_only'} } ) {
+            if ( $source =~ /exec:/ ) {  # detect_compiled_defaults_format
+                my $cmd = (split( /:/, $source))[1];
+                say "Executing external mysqld --verbose --help command : " . $cmd if $opts{'v'};
+                my $content = `$cmd`;
+                # split content by lines ?
+                push { source => $source, content => $content }, @compiled_to_analyse;
+            }
+            else {
+                $result->{$source} = Config::MySQL::Reader->read_file($source);
+            }
         }
+        
+        # get all mysqld values
+        my @defined_vars = get_all_mysql_prms($result);
+        
+        for my $hash (@compiled_to_analyse) {
+            $result->{ $hash->{source} } = { mysqld => {} };
+            for my $prm (@defined_vars) {
+                # make same structure as Config::MySQL::Reader->read_file and push to result hash
+                # this may not work    
+                $result->{ $hash->{source} }{mysqld}{$prm} = get_compiled_param( $hash->{content}, $prm );
+            }
+        }
+        
     }
     else {
+        # read all files in specified directory considering --skip option
         my @files = get_folder(%opts);
         $result->{$_} = Config::MySQL::Reader->read_file($_) for (@files);
     }
-
-    warn Dumper $result;
-
+    
     return $result;
 }
 
+# compare two values considering that _ and - symbols are same
 
-# Return value if all hash values are same and 
+sub _match {
+    my ( $x, $y ) = @_;
+    return 1 if ( ($y =~ s/-/_/rg) eq ($x =~ s/-/_/rg) );
+    return 0;
+}
+
+sub get_compiled_param {
+    my ( $strings, $param ) = @_;
+    for my $str (@$strings) {
+        # https://regex101.com/r/jQjDg5/1
+        if ( $str =~ /^([a-z][a-z-]+)[\s\t]+(.*)\r/ ) {            
+            return $2 if _match( $param, $1 );
+        }
+    }
+    return $NO_PARAM_MSG;
+}
+
+# Return value if all hash values are same and maped hash if no
 
 sub _try_group_hash {
 	my %x = @_;
@@ -92,6 +134,7 @@ sub _try_group_hash {
 	return $result;
 }
 
+# compare files readed by Config::MySQL::Reader
 
 sub compare {
 	my ( $h ) = @_;

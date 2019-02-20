@@ -13,7 +13,7 @@ use File::Slurper qw(write_text);    # for writing diff
 
 App::mycnfdiff - compare MySQL server configs. 
 
-Can also compare with compiled defaults (values after reading options)
+Can also compare with mysqld compiled defaults (values after reading options)
 
 =head1 SYNOPSIS
  

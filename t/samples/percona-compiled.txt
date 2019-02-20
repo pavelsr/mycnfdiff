@@ -2172,9 +2172,9 @@ log-output                                                   FILE
 log-queries-not-using-indexes                                FALSE
 log-raw                                                      FALSE
 log-short-format                                             FALSE
-log-slave-updates                                            FALSE
+log-slave-updates                                             FALSE
 log-slow-admin-statements                                    FALSE
-log-slow-filter                                              
+log-slow-filter                                                       
 log-slow-rate-limit                                          1
 log-slow-rate-type                                           session
 log-slow-slave-statements                                    FALSE
