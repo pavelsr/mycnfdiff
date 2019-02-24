@@ -8,18 +8,26 @@ use Data::Dumper;
 
 my ( $opts, $usage ) = describe_options(
     $0 . ' %o',
-    [ 'skip|s=s',
-        "comma-separated list of files to skip from parsing" ],
-    [ 'dir|d=s', "specify other directory than current, do not resolve files from subdirectories" ],
-    [ 'list|l=s', "manually specify source files to parse, in comma separated list format" ],
+    [
+        'sources|s=s',
+        "comma-separated list of config sources (could be file, dir or command)"
+    ],
+    [
+        'exclude|e=s',
+"comma-separated list of sources to skip from parsing, could be files only"
+    ],
+    [
+        'dir_in|d=s',
+"input dir prefix for all file type sources, used for shorten command record"
+    ],
+    [ 'dir_out|o=s', "output dir (by default current)" ],
+    [ 'debug', "write intermediate stage diff to txt file in dumper format" ],
     [ 'verbose|v', "print extra stuff" ],
     [ 'help|h', "print usage message and exit", { shortcircuit => 1 } ],
 );
 
-# TO-DO: diff with compiled defaults  (mysqld --verbose --help)
-
 print( $usage->text ), exit if $opts->help;
-print "$0 run with options : " . Dumper $opts if $opts->verbose;
+# print "$0 run with options : " . Dumper $opts if $opts->verbose;
 
 exit App::mycnfdiff->run($opts);
 

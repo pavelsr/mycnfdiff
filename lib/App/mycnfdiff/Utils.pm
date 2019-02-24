@@ -3,10 +3,12 @@ package App::mycnfdiff::Utils;
 use strict;
 use warnings;
 use feature 'say';
+use experimental 'smartmatch';
 use Carp;
 
+use File::Spec::Functions qw/file_name_is_absolute splitdir catfile/;
 use List::Compare;
-use List::Util qw(uniq);
+use List::Util qw(uniq all notall);
 use Config::MySQL::Reader;
 
 use Data::Dump qw(dd);
@@ -14,7 +16,8 @@ use Data::Dumper;
 
 use Const::Fast;
 const my $ALLOWED_EXTENSIONS_REGEX => qr/\.ini|cnf$/;
-const my $NO_PARAM_MSG => 'EMPTY';
+const my $NO_PARAM_MSG             => 'EMPTY';
+const my $COMPILED_PREFIX          => 'exec:';
 
 require Exporter;
 our @ISA       = qw(Exporter);
@@ -22,38 +25,59 @@ our @EXPORT_OK = qw(
   get_folder
   get_configs
   get_compiled_param
+  get_all_group_prms
   compare
   split_compare_hash
+  process_diff
+  find_keys_by_val
+  cmp_w_defaults
   _match
+  _can_same_path
+  _try_group_hash
 );
 our %EXPORT_TAGS = ( 'all' => [@EXPORT_OK] );
 
 #Process skip files, filter extensions and return pwd-ed path
+# Params: dir, skip, include_only
+# Return list of files in dir
 
 sub get_folder {
     my (%opts) = @_;
 
-    say "Inspecting modules in " . $opts{'dir'} if $opts{'v'};
-    say "Skip files : " . join( ',', @{ $opts{'skip'} } )
-      if ( $opts{'v'} && @{ $opts{'skip'} } );
+    my @exclude = @{ $opts{'exclude'} } if $opts{'exclude'};
+    my $dir     = $opts{'dir'};
+
+    say "Inspecting modules in " . $dir if $opts{'v'};
+    say "Skip files : " . join( ',', @exclude )
+      if ( $opts{'v'} && @exclude );
 
     my @files;
-    opendir( my $dh, $opts{'dir'} ) or die $!;
+    opendir( my $dh, $dir ) or die $!;
     while ( my $file = readdir($dh) ) {
+
         # warn $file;
-        next unless ( -f $opts{'dir'} . '/' . $file );
+        next unless ( -f $dir . '/' . $file );
         next unless ( $file =~ m/$ALLOWED_EXTENSIONS_REGEX/ );
-        push @files, $opts{'dir'}.'/'.$file;
+        push @files, $dir . '/' . $file;
     }
     closedir($dh);
-    
-    my $lc = List::Compare->new( \@files, $opts{'skip'} );
+
+    my $lc = List::Compare->new( \@files, \@exclude );
     return $lc->get_Lonly;
+}
+
+sub get_all_group_prms {
+    my ( $hash, $group ) = @_;
+    my @res;
+    for my $k ( keys %$hash ) {
+        push @res, keys %{ $hash->{$k}{$group} };
+    }
+    return [ sort { $a cmp $b } uniq @res ];
 }
 
 =head1 get_configs
 
-Get content of configs into hash using L<Config::MySQL::Reader>
+Get content of specified configs into hash using L<Config::MySQL::Reader>
 
 Resolve `exec:` tag in case of compiled defaults source using get_cd()
 
@@ -65,56 +89,70 @@ sub get_configs {
     my $result = {};
     my @compiled_to_analyse;
 
-    if ( @{ $opts{'include_only'} } ) {
-        
-        for my $source ( @{ $opts{'include_only'} } ) {
-            if ( $source =~ /exec:/ ) {  # detect_compiled_defaults_format
-                my $cmd = (split( /:/, $source))[1];
-                say "Executing external mysqld --verbose --help command : " . $cmd if $opts{'v'};
-                my $content = `$cmd`;
-                # split content by lines ?
-                push { source => $source, content => $content }, @compiled_to_analyse;
-            }
-            else {
-                $result->{$source} = Config::MySQL::Reader->read_file($source);
+    for my $source ( @{ $opts{'sources'} } ) {
+
+        if ( $source =~ /$COMPILED_PREFIX/ ) { # detect_compiled_defaults_format
+            my $cmd = ( split( /:/, $source ) )[1];    # extract command
+            say "Executing external mysqld --verbose --help command : " . $cmd
+              if $opts{'v'};
+            my $content = [ split( '\n', `$cmd` ) ];
+            push @compiled_to_analyse,
+              { source => $source, content => $content };
+        }
+        elsif ( -d $source ) {
+            say "Parsing directory $source" if $opts{'v'};
+            my $file_list = get_folder(%opts);
+            for my $f (@$file_list) {
+                my $fpath = catfile( $source, $f );
+                $result->{$fpath} = Config::MySQL::Reader->read_file($fpath);
             }
         }
-        
-        # get all mysqld values
-        my @defined_vars = get_all_mysql_prms($result);
-        
-        for my $hash (@compiled_to_analyse) {
-            $result->{ $hash->{source} } = { mysqld => {} };
-            for my $prm (@defined_vars) {
-                # make same structure as Config::MySQL::Reader->read_file and push to result hash
-                # this may not work    
-                $result->{ $hash->{source} }{mysqld}{$prm} = get_compiled_param( $hash->{content}, $prm );
-            }
+        else {
+            $source = catfile( $opts{'dir_in'}, $source ) if $opts{'dir_in'};
+            say "Parsing $source" if $opts{'v'};
+            $result->{$source} = Config::MySQL::Reader->read_file($source);
         }
-        
     }
-    else {
-        # read all files in specified directory considering --skip option
-        my @files = get_folder(%opts);
-        $result->{$_} = Config::MySQL::Reader->read_file($_) for (@files);
+
+    # get all specified mysqld params from configs
+    my $defined_vars = get_all_group_prms( $result, 'mysqld' );
+
+    for my $hash (@compiled_to_analyse) {
+        say "Processing " . $hash->{source} . " command output" if $opts{'v'};
+        my $source = $hash->{source};
+
+        # trim 'exec:' flag
+        # $source =~ s/exec://;
+        # $result->{$source} = { mysqld => {} };
+        for my $prm (@$defined_vars) {
+
+# make same structure as Config::MySQL::Reader->read_file and push to result hash
+            $result->{$source}{mysqld}{$prm} =
+              get_compiled_param( $hash->{content}, $prm );
+        }
     }
-    
+
     return $result;
 }
 
 # compare two values considering that _ and - symbols are same
+# unit: ok
 
 sub _match {
     my ( $x, $y ) = @_;
-    return 1 if ( ($y =~ s/-/_/rg) eq ($x =~ s/-/_/rg) );
+    return 1 if ( ( $y =~ s/-/_/rg ) eq ( $x =~ s/-/_/rg ) );
     return 0;
 }
+
+# accept array of strings
+# unit: ok
 
 sub get_compiled_param {
     my ( $strings, $param ) = @_;
     for my $str (@$strings) {
+
         # https://regex101.com/r/jQjDg5/1
-        if ( $str =~ /^([a-z][a-z-]+)[\s\t]+(.*)\r/ ) {            
+        if ( $str =~ /^([a-z][a-z-]+)[\s\t]+(.*)\r/ ) {
             return $2 if _match( $param, $1 );
         }
     }
@@ -122,71 +160,211 @@ sub get_compiled_param {
 }
 
 # Return value if all hash values are same and maped hash if no
+# unit: ok
 
 sub _try_group_hash {
-	my %x = @_;
-	my @values = uniq values %x;
-	return $values[0] if ( scalar @values == 1 );
-	my $result;
-	while (my ($key, $value) = each(%x)) {
-  		$result->{$key} = $value;
-	}	
-	return $result;
+    my %x      = @_;
+    my @values = uniq values %x;
+    return $values[0] if ( scalar @values == 1 );
+    my $result;
+    while ( my ( $key, $value ) = each(%x) ) {
+        $result->{$key} = $value;
+    }
+    return $result;
 }
 
 # compare files readed by Config::MySQL::Reader
+# unit: ok
 
 sub compare {
-	my ( $h ) = @_;
+    my ($h) = @_;
 
-	my @filenames = keys %$h;
-	my @all_possible_ini_groups = uniq map { keys %$_ } values %$h;
+    my @filenames               = keys %$h;
+    my @all_possible_ini_groups = uniq map { keys %$_ } values %$h;
 
-	my $result;
-	for my $group_name (@all_possible_ini_groups) {
-		$result->{$group_name} = [ uniq map { keys %{ $h->{$_}{$group_name} } } @filenames ];
-		my $temp = {};
-        
-		for my $param ( @{ $result->{$group_name} } ) {
-			my %values = map { $_ => $h->{$_}{$group_name}{$param} } @filenames;
-			$temp->{$param} = _try_group_hash(%values);
-		}
+    my $result;
+    for my $group_name (@all_possible_ini_groups) {
+        $result->{$group_name} =
+          [ uniq map { keys %{ $h->{$_}{$group_name} } } @filenames ];
+        my $temp = {};
 
-		$result->{$group_name} = $temp;
-	}
+        for my $param ( @{ $result->{$group_name} } ) {
+            my %values = map { $_ => $h->{$_}{$group_name}{$param} } @filenames;
+            $temp->{$param} = _try_group_hash(%values);
+        }
 
-	return $result;
+        $result->{$group_name} = $temp;
+    }
+
+    return $result;
 }
 
-# if group_key->param_key->val = scalar push to same key, otherwise to diff
+# if group_key->param_key->val = scalar push to 'same' key, otherwise to 'diff'
+# unit: ok
 
 sub split_compare_hash {
-	my ( $hash ) = @_;
-	
+    my ($hash) = @_;
+
     my $res = {
-		same => {},
-		diff => {}
-	};
+        same => {},
+        diff => {}
+    };
 
-	while (my ($group_name, $group_params) = each(%$hash)) {
+    while ( my ( $group_name, $group_params ) = each(%$hash) ) {
 
-		my ( $group_same, $group_diff ) = {};
-		while (my ($param, $val) = each(%$group_params)) {
+        my ( $group_same, $group_diff ) = {};
+        while ( my ( $param, $val ) = each(%$group_params) ) {
 
-			if ( ref $val eq '' ) {
-				$group_same->{$param} = $val;
-			} 
-			else {
-				$group_diff->{$param} = $val;
-			}
-		}
+            if ( ref $val eq '' ) {
+                $group_same->{$param} = $val;
+            }
+            else {
+                $group_diff->{$param} = $val;
+            }
+        }
 
-		$res->{same}{$group_name} = $group_same if (%$group_same);
-		$res->{diff}{$group_name} = $group_diff if (%$group_diff);
+        $res->{same}{$group_name} = $group_same if (%$group_same);
+        $res->{diff}{$group_name} = $group_diff if (%$group_diff);
 
-	}
-	return $res;
+    }
+    return $res;
 }
 
+# unit: ok
+
+sub find_keys_by_val {
+    my ( $hash, $val ) = @_;
+    my @res;
+    while ( my ( $k, $v ) = each(%$hash) ) {
+        push @res, $k if ( $v ~~ $val );
+    }
+    return [ sort @res ];
+}
+
+# must diff only once
+# example of iteration two dimensional array
+
+sub _can_same_path {
+    my (@paths) = @_;
+    
+    # validation - all @paths must be file/folder absolute paths
+    for (@paths) {
+        $_ =~ s/"//g;
+        $_ =~ s/'//g;
+    }    
+    return 0 if notall { file_name_is_absolute( $_ ) } @paths;
+
+    return 1 if ( all { $paths[0] eq $_ } @paths );
+    
+    # path now is two dimensional array    
+    @paths = map {
+        [ grep { $_ ne '' } splitdir($_) ]
+    } @paths;
+    
+    # validation - all file paths must be same size
+    return 0
+      if notall { scalar @{ $paths[0] } == $_ } map { scalar @$_ } @paths;
+
+    my $same_counter = 0;
+    my $path_size    = scalar @{ $paths[0] };
+
+    for my $i ( 1 .. $path_size ) {    # over size of path
+        my @curr_vals = ();
+        for my $j ( 0 .. $#paths ) {    # iterate over path
+            push @curr_vals, $paths[$j][ $i - 1 ];
+        }
+
+        if ( all { $curr_vals[0] eq $_ } @curr_vals ) {
+            $same_counter++;
+        }
+    }
+
+    return 1
+      if ( ( $path_size - $same_counter ) <= 1 )
+      ;                                 # if only one diff in same position
+    return 0;
+}
+
+# Prepare structure for writing using Config::MySQL::Writer
+# key of $result will be source filename, value = hash with params
+
+sub process_diff {
+    my ( $hash, $defaults, $write_comment) = @_;
+
+    if ( $defaults && ( ref($defaults) ne 'HASH' ) ) {
+        die "Wrong defaults specified";
+    }
+
+    my $res;
+    my $suggested_common;    # if $defaults
+
+    for my $grp ( keys %$hash ) {    #
+        for my $prm ( sort keys %{ $hash->{$grp} } ) {
+
+            my $no_zero = {};
+
+            while ( my ( $source, $value ) = each( %{ $hash->{$grp}{$prm} } ) )
+            {
+                if ( !defined $defaults && $value ) {
+                    $res->{$source}{$grp}{$prm} = $value;
+                }
+
+                $no_zero->{$source} = $value if ( $defaults && $value );
+            }
+
+            # my $total = scalar keys %$no_zero;
+            my @uniq  = uniq values %$no_zero;
+
+            # only if defaults specified
+            if ($defaults) {
+                
+                # my ( $common, $individual ) = cmp_w_defaults( $prm, $defaults->{$grp}{$prm}, $no_zero );
+                
+                # $res->{$_}{$grp}{$prm} = $common if $common;
+                # $suggested_common->{$grp}{$prm} = $individual if $common;
+
+                # fill  $suggested_common->{$grp}{$param}
+                if ( scalar @uniq == 1 ) {
+
+                    if ( $defaults->{$grp}{$prm} ~~ $uniq[0] ) {
+                        
+                        my $x = ( $write_comment ? '#' : '' );
+                        my $y = ( $write_comment ? ' # compiled: '.$defaults->{$grp}{$prm} : '' );
+# write param as comment to indicate that if compiled defaults changed you will have to specify it manually
+                        $suggested_common->{$grp}{ $x . $prm } = $uniq[0].$y;
+                    }
+                    else {
+                        $suggested_common->{$grp}{$prm} = $uniq[0];
+                    }
+                }
+                elsif ( scalar @uniq == 2 ) {
+                    my $x = ( $write_comment ? ' # '.$uniq[1].', compiled: '.$defaults->{$grp}{$prm} : '' );
+     # 2 uniq params, one to suggested defaults and one to corresponeded $source
+                    $suggested_common->{$grp}{$prm} = $uniq[0].$x;
+                    my $s = find_keys_by_val( $no_zero, $uniq[1] );
+                    $res->{$_}{$grp}{$prm} = $uniq[1] for (@$s);
+                }
+                else {
+                    if ( _can_same_path(@uniq) ) {
+                        my $x = ( $write_comment ? ' # '.join( ',', @uniq ) : '' );
+                        $suggested_common->{$grp}{$prm} =
+                          $defaults->{$grp}{$prm} . $x;
+                    } 
+                    else { # write as regular
+                        while ( my ( $k, $v ) = each( %$no_zero ) ) {
+                            $res->{$k}{$grp}{$prm} = $v;
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    # warn Dumper $res;
+
+    return $res if !defined $defaults;
+
+    return ( $res, $suggested_common );
+}
 
 1;

@@ -4,13 +4,13 @@ App::mycnfdiff
 
 # VERSION
 
-version 1.00
+version 1.01
 
 # SYNOPSIS
 
     $ mycnfdiff -d /foo/bar -l my.cnf.1,my.cnf.bak
     $ mycnfdiff -l server1/my.cnf,server2/my.cnf
-    $ mycnfdiff -l 'exec:docker run -it percona mysqld --verbose --help,my.ini' 
+    $ mycnfdiff -l 'exec:docker run -it percona mysqld --verbose --help,my.ini' -d /foo/bar
     $ mycnfdiff -s s2.ini,s3,ini  # read all cnf and ini files in current dir except s2.ini
 
 Files must have .cnf or .ini extension otherwise they will not be parsed by default
@@ -37,7 +37,7 @@ If utility can not write files it will print result to STDOUT and warn user abou
 
 App::mycnfdiff - compare MySQL server configs. 
 
-Can also compare with compiled defaults (values after reading options)
+Can also compare with mysqld compiled defaults (values after reading options)
 
 # OPTIONS
 
