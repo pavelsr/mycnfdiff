@@ -184,44 +184,45 @@ subtest "process_diff" => sub {
     my $diff2_processed_expected = {
         's1' => {
             'group1' => {
-                'p4' => '"/foo/bar/1.log"',
-                'p3' => 'y1',
                 'p1' => 'abc',
                 'p2' => 'x1',
+                'p3' => 'y1',
+                'p4' => '"/foo/bar/1.log"',
                 'p5' => 'abc'
             }
         },
         's2' => {
             'group1' => {
-                'p4' => '"/foo/baz/1.log"',
+                'p1' => 'abc',
                 'p2' => 'x2',
                 'p3' => 'y2',
-                'p1' => 'abc'
+                'p4' => '"/foo/baz/1.log"'
             }
         },
         's3' => {
             'group1' => {
-                'p4' => '"/foo/bat/1.log"',
                 'p2' => 'x2',
-                'p3' => 'y3'
+                'p3' => 'y3',
+                'p4' => '"/foo/bat/1.log"'
             }
         }
     };
 
     my $diff_2 = {
         'group1' => {
-            'p1' => { 's1' => 'abc', 's2' => 'abc', 's3' => undef },
-            'p2' => { 's1' => 'x1',  's2' => 'x2',  's3' => 'x2' },
-            'p3' => { 's1' => 'y1',  's2' => 'y2',  's3' => 'y3' },
+            'p1' => { 's1' => 'abc', 's2' => 'abc', 's3' => undef }, # one uniq val
+            'p2' => { 's1' => 'x1',  's2' => 'x2',  's3' => 'x2' },  # two unique val
+            'p3' => { 's1' => 'y1',  's2' => 'y2',  's3' => 'y3' },  # all uniq val
             'p4' => {
-                's1' => '"/foo/bar/1.log"',
+                's1' => '"/foo/bar/1.log"',   # can same path
                 's2' => '"/foo/baz/1.log"',
                 's3' => '"/foo/bat/1.log"'
             },
-            'p5' => { 's1' => 'abc', 's2' => undef, 's3' => undef },
+            'p5' => { 's1' => 'abc', 's2' => undef, 's3' => undef }, # one uniq val and undef
         }
     };
 
+    # undef is removed (probably must no since we may have empty params)
     is_deeply process_diff($diff_2), $diff2_processed_expected, "Data 2";
 
     my $defaults = {
@@ -233,35 +234,11 @@ subtest "process_diff" => sub {
             'p5' => 'abc'
         }
     };
-
-    my $nc_expected = {
-        'group1' => {
-            'p5' => 'abc',
-            'p1' => 'abc',
-            'p2' => 'x1',
-            'p4' => '"/somewhere/1.log"'
-        }
-    };
-
-    my ( $individual, $common ) = process_diff( $diff_2, $defaults );
-
+    
     my $ind_exp = {
-        's3' => {
-            'group1' => {
-                'p3' => 'y3'
-            }
-        },
-        's1' => {
-            'group1' => {
-                'p3' => 'y1',
-                'p2' => 'x1'
-            }
-        },
-        's2' => {
-            'group1' => {
-                'p3' => 'y2'
-            }
-        }
+        's1' => { 'group1' => { 'p3' => 'y1', 'p2' => 'x1' } },  # since x2 used twice
+        's2' => { 'group1' => { 'p3' => 'y2' } },
+        's3' => { 'group1' => { 'p3' => 'y3' } }  # p2 ?
     };
 
     my $common_exp = {
@@ -272,8 +249,10 @@ subtest "process_diff" => sub {
             'p1' => 'abc'
         }
     };
-
+    
+    my ( $individual, $common ) = process_diff( $diff_2, $defaults );
     is_deeply $individual, $ind_exp,    'Without comments - individual';
+        
     is_deeply $common,     $common_exp, 'Without comments - common';
 
     my ( $individual2, $common2 ) = process_diff( $diff_2, $defaults, 1 );
@@ -282,10 +261,10 @@ subtest "process_diff" => sub {
 
     my $common_exp = {
         'group1' => {
-            '#p5' => 'abc # compiled: abc',
+            '#p5' => 'abc # same as compiled',
             'p1'  => 'abc',
             'p2'  => 'x2 # x1, compiled: compiled_p2',
-            'p4' => '"/somewhere/1.log" # "/foo/baz/1.log","/foo/bat/1.log","/foo/bar/1.log"'
+            'p4' => '"/somewhere/1.log" # "/foo/bar/1.log", "/foo/bat/1.log", "/foo/baz/1.log"'  # sorted
         }
     };
     

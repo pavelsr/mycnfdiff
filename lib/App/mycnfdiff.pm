@@ -1,4 +1,7 @@
 package App::mycnfdiff;
+
+# ABSTRACT: Main class
+
 use strict;
 use warnings;
 use feature 'say';
@@ -61,7 +64,7 @@ my $SUGGEST_FOLDER = 'suggest';
 sub _write_result {
     my ( $cmp_hash, $debug, $verbose ) = @_;
     Config::MySQL::Writer->write_file( $cmp_hash->{same}, $COMMON_FILENAME );
-    say "write diff to $DIFF_FILENAME file in dumper format" if $verbose;
+    say "write diff to $DIFF_FILENAME file in dumper format" if ( $debug && $verbose );
     write_text( $DIFF_FILENAME, Dumper $cmp_hash->{diff} ) if $debug;
 }
 
@@ -124,10 +127,6 @@ sub run {
     
     say "Generate uniq configs, you can use them as defaults-extra-file" if $opts->verbose;
     make_path($UNIQ_FOLDER);
-    
-    # unless(mkdir $UNIQ_FOLDER) {
-    #     die "Unable to create directory for uniq configs\n";
-    # }
     
     my $result = process_diff ( $no_compiled_cmp->{diff} );
     

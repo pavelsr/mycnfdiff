@@ -1,5 +1,7 @@
 #!/usr/bin/env perl
 
+# ABSTRACT: CLI tool for App::mycnfdiff
+
 package mycnfdiff;
 
 use Getopt::Long::Descriptive;

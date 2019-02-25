@@ -1,6 +1,6 @@
 # NAME
 
-App::mycnfdiff
+App::mycnfdiff - Main class
 
 # VERSION
 

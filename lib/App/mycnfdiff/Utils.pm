@@ -1,10 +1,13 @@
 package App::mycnfdiff::Utils;
 
+# ABSTRACT: Common and reusable functions
+
 use strict;
 use warnings;
 use feature 'say';
 use experimental 'smartmatch';
 use Carp;
+use Sort::Naturally;
 
 use File::Spec::Functions qw/file_name_is_absolute splitdir catfile/;
 use List::Compare;
@@ -285,6 +288,12 @@ sub _can_same_path {
     return 0;
 }
 
+
+sub most_used {
+    my @x = shift;
+    
+}
+
 # Prepare structure for writing using Config::MySQL::Writer
 # key of $result will be source filename, value = hash with params
 
@@ -295,10 +304,9 @@ sub process_diff {
         die "Wrong defaults specified";
     }
 
-    my $res;
-    my $suggested_common;    # if $defaults
+    my ( $res, $suggested_common ) = {};
 
-    for my $grp ( keys %$hash ) {    #
+    for my $grp ( keys %$hash ) {
         for my $prm ( sort keys %{ $hash->{$grp} } ) {
 
             my $no_zero = {};
@@ -312,24 +320,17 @@ sub process_diff {
                 $no_zero->{$source} = $value if ( $defaults && $value );
             }
 
-            # my $total = scalar keys %$no_zero;
-            my @uniq  = uniq values %$no_zero;
+            my @uniq = uniq values %$no_zero;
 
-            # only if defaults specified
             if ($defaults) {
-                
-                # my ( $common, $individual ) = cmp_w_defaults( $prm, $defaults->{$grp}{$prm}, $no_zero );
-                
-                # $res->{$_}{$grp}{$prm} = $common if $common;
-                # $suggested_common->{$grp}{$prm} = $individual if $common;
-
-                # fill  $suggested_common->{$grp}{$param}
+            
+                # fill  $suggested_common->{$grp}{$param} and $res->{$_}{$grp}{$prm}
                 if ( scalar @uniq == 1 ) {
 
                     if ( $defaults->{$grp}{$prm} ~~ $uniq[0] ) {
                         
                         my $x = ( $write_comment ? '#' : '' );
-                        my $y = ( $write_comment ? ' # compiled: '.$defaults->{$grp}{$prm} : '' );
+                        my $y = ( $write_comment ? ' # same as compiled' : '' );
 # write param as comment to indicate that if compiled defaults changed you will have to specify it manually
                         $suggested_common->{$grp}{ $x . $prm } = $uniq[0].$y;
                     }
@@ -338,19 +339,24 @@ sub process_diff {
                     }
                 }
                 elsif ( scalar @uniq == 2 ) {
-                    my $x = ( $write_comment ? ' # '.$uniq[1].', compiled: '.$defaults->{$grp}{$prm} : '' );
-     # 2 uniq params, one to suggested defaults and one to corresponeded $source
-                    $suggested_common->{$grp}{$prm} = $uniq[0].$x;
-                    my $s = find_keys_by_val( $no_zero, $uniq[1] );
-                    $res->{$_}{$grp}{$prm} = $uniq[1] for (@$s);
+                    my %count = ();
+                    foreach my $element (values %$no_zero) {
+                        $count{$element}++;
+                    }
+                    my ($max_by_count, $min_by_count) = sort { $count{$b} <=> $count{$a} } keys %count;
+                    # $max_by_count to suggested defaults $min_by_count to corresponeded $source(s)
+                    my $x = ( $write_comment ? ' # '.$min_by_count.', compiled: '.$defaults->{$grp}{$prm} : '' );
+                    $suggested_common->{$grp}{$prm} = $max_by_count.$x;
+                    my $s = find_keys_by_val( $no_zero, $min_by_count ); # defined sources to push
+                    $res->{$_}{$grp}{$prm} = $min_by_count for (@$s);
                 }
                 else {
                     if ( _can_same_path(@uniq) ) {
-                        my $x = ( $write_comment ? ' # '.join( ',', @uniq ) : '' );
+                        my $x = ( $write_comment ? ' # '.join( ', ', sort @uniq ) : '' );  # nsort useful here
                         $suggested_common->{$grp}{$prm} =
                           $defaults->{$grp}{$prm} . $x;
                     } 
-                    else { # write as regular
+                    else {
                         while ( my ( $k, $v ) = each( %$no_zero ) ) {
                             $res->{$k}{$grp}{$prm} = $v;
                         }
@@ -359,11 +365,8 @@ sub process_diff {
             }
         }
     }
-
-    # warn Dumper $res;
-
+    
     return $res if !defined $defaults;
-
     return ( $res, $suggested_common );
 }
 
