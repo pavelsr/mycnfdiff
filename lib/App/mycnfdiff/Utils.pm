@@ -331,90 +331,54 @@ sub process_diff {
             # $res->{$_}{$grp}{$prm}
 
             if ($defaults) {
-                if ( scalar @uniq == 1 ) {
-                    if ( $defaults->{$grp}{$prm} )
-
-                    # write uniq as comment if compiled is same and exists
-                    # otherwise write uniq to non-commented
-                    
-                    if ( $defaults->{$grp}{$prm} ~~ $uniq[0] ) {
-                        my $x = ( $write_comment ? '#' . $prm : $prm );
-                        my $y = (
-                              $write_comment
-                            ? $uniq[0] . ' # same as compiled'
-                            : $uniq[0]
-                        );
-
-# write param as comment to indicate that if compiled defaults changed you will have to specify it manually
-                        $suggested_common->{$grp}{$x} = $y;
-                    }
-                    else {
-                        # TO-DO: check $defaults->{$grp}{$prm}
-                        
-                        my $x = (
-                              $write_comment
-                            ? $uniq[0]
-                              . ' # compiled: '
-                              . $defaults->{$grp}{$prm}
-                            : $uniq[0]
-                        );
-                        $suggested_common->{$grp}{$prm} = $x;
-                    }
+                # write uniq as comment if compiled is same and exists
+                # to indicate that if compiled defaults changed you will have to specify it manually
+                if ( ( scalar @uniq == 1 ) && ( $defaults->{$grp}{$prm} ) && ( $defaults->{$grp}{$prm} ~~ $uniq[0] ) ) {
+                    my $x = ( $write_comment ? '#' . $prm : $prm );
+                    my $y = ( $write_comment ? $uniq[0] . ' # same as compiled' : $uniq[0] );
+                    $suggested_common->{$grp}{$x} = $y;
                 }
+                
+                elsif ( ( scalar @uniq == 1 ) && ( $defaults->{$grp}{$prm} ) && ( $defaults->{$grp}{$prm} !~ $uniq[0] ) ) {
+                    my $x = ( $write_comment ? $uniq[0]. ' # compiled: '. $defaults->{$grp}{$prm} : $uniq[0] );
+                    $suggested_common->{$grp}{$prm} = $x;
+                }
+                
+                elsif ( ( scalar @uniq == 1 ) && ( !defined $defaults->{$grp}{$prm} ) ) {
+                    my $x = ( $write_comment ? $uniq[0]. ' # compiled default is not set ' : $uniq[0] );
+                    $suggested_common->{$grp}{$prm} = $x;
+                }
+
                 elsif ( scalar @uniq == 2 ) {
                     my %count = ();
                     foreach my $element ( values %$no_zero ) {
                         $count{$element}++;
                     }
-                    my ( $max_by_count, $min_by_count ) =
-                      sort { $count{$b} <=> $count{$a} } keys %count;
-
- # $max_by_count to suggested defaults $min_by_count to corresponeded $source(s)
-                    my $x = (
-                          $write_comment
-                        ? $max_by_count . ' # '
-                          . $min_by_count
-                          . ', compiled: '
-                          . $defaults->{$grp}{$prm}
-                        : $max_by_count
-                    );
+                    my ( $max_by_count, $min_by_count ) = sort { $count{$b} <=> $count{$a} } keys %count;
+                    # $max_by_count to suggested defaults $min_by_count to corresponeded $source(s)
+                    my $x = ( $write_comment ? $max_by_count . ' # ' . $min_by_count . ', compiled: ' . $defaults->{$grp}{$prm} : $max_by_count );
                     $suggested_common->{$grp}{$prm} = $x;
-                    my $s = find_keys_by_val( $no_zero, $min_by_count )
-                      ;    # defined sources to push
+                    my $s = find_keys_by_val( $no_zero, $min_by_count );    # defined sources to push
                     $res->{$_}{$grp}{$prm} = $min_by_count for (@$s);
                 }
+                elsif ( _can_same_path(@uniq) && $defaults->{$grp}{$prm} ) {
+                    my $x = ( $write_comment ? $defaults->{$grp}{$prm} . ' # ' . join( ', ', sort @uniq ) : $defaults->{$grp}{$prm} );
+                    $suggested_common->{$grp}{$prm} = $x;
+                }
+                
+                elsif ( _can_same_path(@uniq) && !defined $defaults->{$grp}{$prm} ) {
+                    my $x = ( $write_comment ? $uniq[0] . ' # ' . join( ', ', sort @uniq[1..$#uniq] ) : $uniq[0] );
+                    $suggested_common->{$grp}{$prm} = $x;
+                }
+                
                 else {
-                    if ( _can_same_path(@uniq) ) {
-                        # check if $defaults->{$grp}{$prm} is not empty
-                        if ( $defaults->{$grp}{$prm} ) {
-
-                            my $x = (
-                                  $write_comment
-                                ? $defaults->{$grp}{$prm} . ' # '
-                                  . join( ', ', sort @uniq )
-                                : $defaults->{$grp}{$prm}
-                            );
-                            $suggested_common->{$grp}{$prm} = $x;
-                        } 
-                        else {
-                            my $x = (
-                                  $write_comment
-                                ? $uniq[0] . ' # '
-                                  . join( ', ', sort @uniq[1..$#uniq] )
-                                : $uniq[0]
-                            );
-                            $suggested_common->{$grp}{$prm} = $x;
-                        }
-                    }
-                    else {
-                        while ( my ( $k, $v ) = each(%$no_zero) ) {
-                            $res->{$k}{$grp}{$prm} = $v;
-                        }
+                    while ( my ( $k, $v ) = each(%$no_zero) ) {
+                        $res->{$k}{$grp}{$prm} = $v;
                     }
                 }
-            }
-        }
-    }
+            } # end of if defaults
+        } # end of for $prm
+    } # end of for $grp
 
     return $res if !defined $defaults;
     return ( $res, $suggested_common );
