@@ -331,9 +331,15 @@ sub process_diff {
             # $res->{$_}{$grp}{$prm}
 
             if ($defaults) {
+                
+                if ( ( scalar @uniq == 1 ) && ( !defined $defaults->{$grp}{$prm} ) ) {
+                    my $x = ( $write_comment ? $uniq[0]. ' # compiled default is not set ' : $uniq[0] );
+                    $suggested_common->{$grp}{$prm} = $x;
+                }
+                
                 # write uniq as comment if compiled is same and exists
                 # to indicate that if compiled defaults changed you will have to specify it manually
-                if ( ( scalar @uniq == 1 ) && ( $defaults->{$grp}{$prm} ) && ( $defaults->{$grp}{$prm} ~~ $uniq[0] ) ) {
+                elsif ( ( scalar @uniq == 1 ) && ( $defaults->{$grp}{$prm} ) && ( $defaults->{$grp}{$prm} ~~ $uniq[0] ) ) {
                     my $x = ( $write_comment ? '#' . $prm : $prm );
                     my $y = ( $write_comment ? $uniq[0] . ' # same as compiled' : $uniq[0] );
                     $suggested_common->{$grp}{$x} = $y;
@@ -344,11 +350,6 @@ sub process_diff {
                     $suggested_common->{$grp}{$prm} = $x;
                 }
                 
-                elsif ( ( scalar @uniq == 1 ) && ( !defined $defaults->{$grp}{$prm} ) ) {
-                    my $x = ( $write_comment ? $uniq[0]. ' # compiled default is not set ' : $uniq[0] );
-                    $suggested_common->{$grp}{$prm} = $x;
-                }
-
                 elsif ( scalar @uniq == 2 ) {
                     my %count = ();
                     foreach my $element ( values %$no_zero ) {
@@ -361,13 +362,14 @@ sub process_diff {
                     my $s = find_keys_by_val( $no_zero, $min_by_count );    # defined sources to push
                     $res->{$_}{$grp}{$prm} = $min_by_count for (@$s);
                 }
-                elsif ( _can_same_path(@uniq) && $defaults->{$grp}{$prm} ) {
-                    my $x = ( $write_comment ? $defaults->{$grp}{$prm} . ' # ' . join( ', ', sort @uniq ) : $defaults->{$grp}{$prm} );
-                    $suggested_common->{$grp}{$prm} = $x;
-                }
                 
                 elsif ( _can_same_path(@uniq) && !defined $defaults->{$grp}{$prm} ) {
                     my $x = ( $write_comment ? $uniq[0] . ' # ' . join( ', ', sort @uniq[1..$#uniq] ) : $uniq[0] );
+                    $suggested_common->{$grp}{$prm} = $x;
+                }
+                
+                elsif ( _can_same_path(@uniq) && $defaults->{$grp}{$prm} ) {
+                    my $x = ( $write_comment ? $defaults->{$grp}{$prm} . ' # ' . join( ', ', sort @uniq ) : $defaults->{$grp}{$prm} );
                     $suggested_common->{$grp}{$prm} = $x;
                 }
                 
