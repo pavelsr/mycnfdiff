@@ -332,20 +332,20 @@ sub process_diff {
 
             if ($defaults) {
                 
-                if ( ( scalar @uniq == 1 ) && ( !defined $defaults->{$grp}{$prm} ) ) {
-                    my $x = ( $write_comment ? $uniq[0]. ' # compiled default is not set ' : $uniq[0] );
+                if ( ( scalar @uniq == 1 ) && !defined $defaults->{$grp}{$prm} ) {
+                    my $x = ( $write_comment ? $uniq[0]. ' # compiled default is not set' : $uniq[0] );
                     $suggested_common->{$grp}{$prm} = $x;
                 }
                 
                 # write uniq as comment if compiled is same and exists
                 # to indicate that if compiled defaults changed you will have to specify it manually
-                elsif ( ( scalar @uniq == 1 ) && ( $defaults->{$grp}{$prm} ) && ( $defaults->{$grp}{$prm} ~~ $uniq[0] ) ) {
+                elsif ( ( scalar @uniq == 1 ) && $defaults->{$grp}{$prm} && ( $defaults->{$grp}{$prm} ~~ $uniq[0] ) ) {
                     my $x = ( $write_comment ? '#' . $prm : $prm );
                     my $y = ( $write_comment ? $uniq[0] . ' # same as compiled' : $uniq[0] );
                     $suggested_common->{$grp}{$x} = $y;
                 }
                 
-                elsif ( ( scalar @uniq == 1 ) && ( $defaults->{$grp}{$prm} ) && ( $defaults->{$grp}{$prm} !~ $uniq[0] ) ) {
+                elsif ( ( scalar @uniq == 1 ) && $defaults->{$grp}{$prm} && ( $defaults->{$grp}{$prm} !~ $uniq[0] ) ) {
                     my $x = ( $write_comment ? $uniq[0]. ' # compiled: '. $defaults->{$grp}{$prm} : $uniq[0] );
                     $suggested_common->{$grp}{$prm} = $x;
                 }
@@ -356,8 +356,10 @@ sub process_diff {
                         $count{$element}++;
                     }
                     my ( $max_by_count, $min_by_count ) = sort { $count{$b} <=> $count{$a} } keys %count;
+                    
                     # $max_by_count to suggested defaults $min_by_count to corresponeded $source(s)
-                    my $x = ( $write_comment ? $max_by_count . ' # ' . $min_by_count . ', compiled: ' . $defaults->{$grp}{$prm} : $max_by_count );
+                    my $x = ( $write_comment ? $max_by_count . ' # ' . $min_by_count : $max_by_count );
+                    $x.= ', compiled: ' . $defaults->{$grp}{$prm} if ( $defaults->{$grp}{$prm} && $write_comment );
                     $suggested_common->{$grp}{$prm} = $x;
                     my $s = find_keys_by_val( $no_zero, $min_by_count );    # defined sources to push
                     $res->{$_}{$grp}{$prm} = $min_by_count for (@$s);
