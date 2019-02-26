@@ -11,6 +11,7 @@ use File::Spec::Functions qw/file_name_is_absolute splitdir catfile/;
 use List::Compare;
 use List::Util qw(uniq all notall);
 use Config::MySQL::Reader;
+use Sort::HashKeys;
 
 use Data::Dump qw(dd);
 use Data::Dumper;
@@ -32,6 +33,7 @@ our @EXPORT_OK = qw(
   process_diff
   find_keys_by_val
   cmp_w_defaults
+  sort_two_dimensional_hashref
   _match
   _can_same_path
   _try_group_hash
@@ -297,6 +299,13 @@ sub _can_same_path {
     return 0;
 }
 
+sub sort_two_dimensional_hashref {
+    my ( $hash ) = @_;
+    foreach my $name (sort keys %$hash) {
+        $hash->{$name} = [ Sort::HashKeys::sort( %{$hash->{$name}} ) ];
+    }    
+}
+
 # Prepare structure for writing using Config::MySQL::Writer
 # key of $result will be source filename, value = hash with params
 
@@ -309,7 +318,7 @@ sub process_diff {
 
     my ( $res, $suggested_common ) = {};
 
-    for my $grp ( keys %$hash ) {
+    for my $grp ( sort keys %$hash ) {
         for my $prm ( sort keys %{ $hash->{$grp} } ) {
 
             my $no_zero = {};

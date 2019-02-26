@@ -13,6 +13,7 @@ use Config::MySQL::Writer;
 use File::Slurper qw(write_text);    # for writing diff
 use File::Basename;
 use File::Path qw(make_path);
+use Hash::Ordered;
 
 =head1 NAME
 
@@ -141,14 +142,19 @@ sub run {
         
         my ( $diff, $suggested_same ) = process_diff ( $no_compiled_cmp->{diff}, $compiled, $opts->debug );
         
-        warn Dumper $suggested_same;
-        
         for my $k ( keys %$diff ) {
             $diff->{$k} = Config::MySQL::Writer->preprocess_input($diff->{$k}); # order params
             Config::MySQL::Writer->write_file( $diff->{$k}, $SUGGEST_FOLDER.'/'.basename($k) );
         }
         
-        $suggested_same = Config::MySQL::Writer->preprocess_input($suggested_same);
+        # warn "S1 : ".Dumper $suggested_same;
+        # 
+        # # $suggested_same = Config::INI::Writer->preprocess_input($suggested_same);
+        # $suggested_same = Hash::Ordered->new( %$suggested_same );
+        # 
+        # warn "S2 : ".Dumper $suggested_same;
+        
+        sort_two_dimensional_hashref( $suggested_same );
         Config::MySQL::Writer->write_file( $suggested_same, $COMMON_FILENAME.'.nocompiled' );
         
     }
