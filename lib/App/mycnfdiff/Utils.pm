@@ -7,8 +7,6 @@ use warnings;
 use feature 'say';
 use experimental 'smartmatch';
 use Carp;
-use Sort::Naturally;
-
 use File::Spec::Functions qw/file_name_is_absolute splitdir catfile/;
 use List::Compare;
 use List::Util qw(uniq all notall);
@@ -75,6 +73,10 @@ sub get_all_group_prms {
     for my $k ( keys %$hash ) {
         push @res, keys %{ $hash->{$k}{$group} };
     }
+
+    # for (@res) {
+    #     $_ =~ s/-/_/g;
+    # }
     return [ sort { $a cmp $b } uniq @res ];
 }
 
@@ -112,8 +114,10 @@ sub get_configs {
         }
         else {
             $source = catfile( $opts{'dir_in'}, $source ) if $opts{'dir_in'};
-            say "Parsing $source" if $opts{'v'};
             $result->{$source} = Config::MySQL::Reader->read_file($source);
+            say "Parsing $source, groups total : " . scalar
+              keys %{ $result->{$source} }
+              if $opts{'v'};
         }
     }
 
@@ -249,56 +253,55 @@ sub find_keys_by_val {
 
 sub _can_same_path {
     my (@paths) = @_;
-    
+
+    my $keyword = '<some>';
+
     # validation - all @paths must be file/folder absolute paths
     for (@paths) {
         $_ =~ s/"//g;
         $_ =~ s/'//g;
-    }    
-    return 0 if notall { file_name_is_absolute( $_ ) } @paths;
+    }
+    return 0 if notall { file_name_is_absolute($_) } @paths;
 
-    return 1 if ( all { $paths[0] eq $_ } @paths );
-    
-    # path now is two dimensional array    
+    return $paths[0] if ( all { $paths[0] eq $_ } @paths );
+
+    # path now is two dimensional array
     @paths = map {
         [ grep { $_ ne '' } splitdir($_) ]
     } @paths;
-    
+
     # validation - all file paths must be same size
     return 0
       if notall { scalar @{ $paths[0] } == $_ } map { scalar @$_ } @paths;
 
-    my $same_counter = 0;
+    my $diff_counter = 0;
     my $path_size    = scalar @{ $paths[0] };
+    my @common_path  = ('/');
 
     for my $i ( 1 .. $path_size ) {    # over size of path
         my @curr_vals = ();
         for my $j ( 0 .. $#paths ) {    # iterate over path
             push @curr_vals, $paths[$j][ $i - 1 ];
         }
-
-        if ( all { $curr_vals[0] eq $_ } @curr_vals ) {
-            $same_counter++;
+        if ( notall { $curr_vals[0] eq $_ } @curr_vals ) {
+            $diff_counter++;
+            push @common_path, $keyword;
+        }
+        else {
+            push @common_path, $curr_vals[0];
         }
     }
 
-    return 1
-      if ( ( $path_size - $same_counter ) <= 1 )
-      ;                                 # if only one diff in same position
+    return catfile(@common_path)
+      if ( $diff_counter <= 1 );    # if only one diff in same position
     return 0;
-}
-
-
-sub most_used {
-    my @x = shift;
-    
 }
 
 # Prepare structure for writing using Config::MySQL::Writer
 # key of $result will be source filename, value = hash with params
 
 sub process_diff {
-    my ( $hash, $defaults, $write_comment) = @_;
+    my ( $hash, $defaults, $write_comment ) = @_;
 
     if ( $defaults && ( ref($defaults) ne 'HASH' ) ) {
         die "Wrong defaults specified";
@@ -313,7 +316,7 @@ sub process_diff {
 
             while ( my ( $source, $value ) = each( %{ $hash->{$grp}{$prm} } ) )
             {
-                if ( !defined $defaults && $value ) {
+                if ( !defined $defaults && $value ) {  # may leave value
                     $res->{$source}{$grp}{$prm} = $value;
                 }
 
@@ -321,43 +324,90 @@ sub process_diff {
             }
 
             my @uniq = uniq values %$no_zero;
+            
+            # the main purpose of next block is to fill
+            # $suggested_common->{$grp}{$param} 
+            # and 
+            # $res->{$_}{$grp}{$prm}
 
             if ($defaults) {
-            
-                # fill  $suggested_common->{$grp}{$param} and $res->{$_}{$grp}{$prm}
                 if ( scalar @uniq == 1 ) {
+                    if ( $defaults->{$grp}{$prm} )
 
+                    # write uniq as comment if compiled is same and exists
+                    # otherwise write uniq to non-commented
+                    
                     if ( $defaults->{$grp}{$prm} ~~ $uniq[0] ) {
-                        
-                        my $x = ( $write_comment ? '#' : '' );
-                        my $y = ( $write_comment ? ' # same as compiled' : '' );
+                        my $x = ( $write_comment ? '#' . $prm : $prm );
+                        my $y = (
+                              $write_comment
+                            ? $uniq[0] . ' # same as compiled'
+                            : $uniq[0]
+                        );
+
 # write param as comment to indicate that if compiled defaults changed you will have to specify it manually
-                        $suggested_common->{$grp}{ $x . $prm } = $uniq[0].$y;
+                        $suggested_common->{$grp}{$x} = $y;
                     }
                     else {
-                        $suggested_common->{$grp}{$prm} = $uniq[0];
+                        # TO-DO: check $defaults->{$grp}{$prm}
+                        
+                        my $x = (
+                              $write_comment
+                            ? $uniq[0]
+                              . ' # compiled: '
+                              . $defaults->{$grp}{$prm}
+                            : $uniq[0]
+                        );
+                        $suggested_common->{$grp}{$prm} = $x;
                     }
                 }
                 elsif ( scalar @uniq == 2 ) {
                     my %count = ();
-                    foreach my $element (values %$no_zero) {
+                    foreach my $element ( values %$no_zero ) {
                         $count{$element}++;
                     }
-                    my ($max_by_count, $min_by_count) = sort { $count{$b} <=> $count{$a} } keys %count;
-                    # $max_by_count to suggested defaults $min_by_count to corresponeded $source(s)
-                    my $x = ( $write_comment ? ' # '.$min_by_count.', compiled: '.$defaults->{$grp}{$prm} : '' );
-                    $suggested_common->{$grp}{$prm} = $max_by_count.$x;
-                    my $s = find_keys_by_val( $no_zero, $min_by_count ); # defined sources to push
+                    my ( $max_by_count, $min_by_count ) =
+                      sort { $count{$b} <=> $count{$a} } keys %count;
+
+ # $max_by_count to suggested defaults $min_by_count to corresponeded $source(s)
+                    my $x = (
+                          $write_comment
+                        ? $max_by_count . ' # '
+                          . $min_by_count
+                          . ', compiled: '
+                          . $defaults->{$grp}{$prm}
+                        : $max_by_count
+                    );
+                    $suggested_common->{$grp}{$prm} = $x;
+                    my $s = find_keys_by_val( $no_zero, $min_by_count )
+                      ;    # defined sources to push
                     $res->{$_}{$grp}{$prm} = $min_by_count for (@$s);
                 }
                 else {
                     if ( _can_same_path(@uniq) ) {
-                        my $x = ( $write_comment ? ' # '.join( ', ', sort @uniq ) : '' );  # nsort useful here
-                        $suggested_common->{$grp}{$prm} =
-                          $defaults->{$grp}{$prm} . $x;
-                    } 
+                        # check if $defaults->{$grp}{$prm} is not empty
+                        if ( $defaults->{$grp}{$prm} ) {
+
+                            my $x = (
+                                  $write_comment
+                                ? $defaults->{$grp}{$prm} . ' # '
+                                  . join( ', ', sort @uniq )
+                                : $defaults->{$grp}{$prm}
+                            );
+                            $suggested_common->{$grp}{$prm} = $x;
+                        } 
+                        else {
+                            my $x = (
+                                  $write_comment
+                                ? $uniq[0] . ' # '
+                                  . join( ', ', sort @uniq[1..$#uniq] )
+                                : $uniq[0]
+                            );
+                            $suggested_common->{$grp}{$prm} = $x;
+                        }
+                    }
                     else {
-                        while ( my ( $k, $v ) = each( %$no_zero ) ) {
+                        while ( my ( $k, $v ) = each(%$no_zero) ) {
                             $res->{$k}{$grp}{$prm} = $v;
                         }
                     }
@@ -365,7 +415,7 @@ sub process_diff {
             }
         }
     }
-    
+
     return $res if !defined $defaults;
     return ( $res, $suggested_common );
 }

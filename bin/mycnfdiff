@@ -23,7 +23,7 @@ my ( $opts, $usage ) = describe_options(
 "input dir prefix for all file type sources, used for shorten command record"
     ],
     [ 'dir_out|o=s', "output dir (by default current)" ],
-    [ 'debug', "write intermediate stage diff to txt file in dumper format" ],
+    [ 'debug', "write comments in recommended result and intermediate stage diff to txt file in dumper format" ],
     [ 'verbose|v', "print extra stuff" ],
     [ 'help|h', "print usage message and exit", { shortcircuit => 1 } ],
 );

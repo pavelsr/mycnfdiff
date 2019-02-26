@@ -106,10 +106,9 @@ sub run {
     }
     
     # Remove compiled and make comparision again
-    my $compiled = {};
+    my $compiled = {};    
     for my $k ( keys %$configs_content) {
         if ( $k =~ $COMPILED_PREFIX ) {
-            $compiled_n++;
             $compiled->{$k} = $configs_content->{$k};
             delete $configs_content->{$k};
         }
@@ -134,21 +133,23 @@ sub run {
         Config::MySQL::Writer->write_file( $result->{$k}, $UNIQ_FOLDER.'/'.basename($k) );
     }
     
-    # write 'suggestion' folder
-    # add to # my.cnf
     if ( $compiled_n == 1 ) {
         
-        say "Generate recommendation configs since you have only one compiled source" if $opts->verbose;
+        say "Generate recommended configs since you have only one compiled source" if $opts->verbose;
         
         make_path($SUGGEST_FOLDER);
         
-        my ( $diff, $suggested_same ) = process_diff ( $no_compiled_cmp->{diff}, $compiled );
+        my ( $diff, $suggested_same ) = process_diff ( $no_compiled_cmp->{diff}, $compiled, $opts->debug );
+        
+        warn Dumper $suggested_same;
         
         for my $k ( keys %$diff ) {
+            $diff->{$k} = Config::MySQL::Writer->preprocess_input($diff->{$k}); # order params
             Config::MySQL::Writer->write_file( $diff->{$k}, $SUGGEST_FOLDER.'/'.basename($k) );
         }
         
-        Config::MySQL::Writer->write_file( $suggested_same, $COMMON_FILENAME );
+        $suggested_same = Config::MySQL::Writer->preprocess_input($suggested_same);
+        Config::MySQL::Writer->write_file( $suggested_same, $COMMON_FILENAME.'.nocompiled' );
         
     }
     

@@ -126,11 +126,14 @@ subtest "_can_same_path" => sub {
     ok !_can_same_path( '/foo/bar/bat',   '/foo/bar' );    # diff size
     ok !_can_same_path( '"/foo/bar/bat"', '"/foo/bar"' );  # diff size
     ok !_can_same_path( 'y1',             'y2', 'y3' );    # not abs path
-
+    
     ok _can_same_path( '/foo/bar', '/foo/bar', '/foo/bar' )
       ;    # absolutely same folders
     ok _can_same_path( '/media/foo/mysql', '/media/bar/mysql',
         '/media/baz/mysql' );    # folders
+        
+    is '/media/<some>/mysql', _can_same_path( '/media/foo/mysql', '/media/bar/mysql', '/media/baz/mysql' );
+
     ok _can_same_path( '/foo/bar/xyz.txt', '/foo/bar/abc.txt' );    # files
     ok _can_same_path( '"/foo/baz/1.log"', '"/foo/bat/1.log"',
         '"/foo/bar/1.log"' );    # with quotes
@@ -259,16 +262,16 @@ subtest "process_diff" => sub {
     is_deeply $individual2, $ind_exp,
       'With comments - individual was not changed';
 
-    my $common_exp = {
+    my $common_exp2 = {
         'group1' => {
-            '#p5' => 'abc # same as compiled',
-            'p1'  => 'abc',
-            'p2'  => 'x2 # x1, compiled: compiled_p2',
-            'p4' => '"/somewhere/1.log" # "/foo/bar/1.log", "/foo/bat/1.log", "/foo/baz/1.log"'  # sorted
+            'p1' => 'abc # compiled: xyz',
+            'p2' => 'x2 # x1, compiled: compiled_p2',
+            'p4' => '"/somewhere/1.log" # "/foo/bar/1.log", "/foo/bat/1.log", "/foo/baz/1.log"',  # sorted
+            '#p5' => 'abc # same as compiled'
         }
     };
     
-    is_deeply $common2, $common_exp;
+    is_deeply $common2, $common_exp2, 'With comment option';
 
 };
 
