@@ -117,8 +117,8 @@ sub get_configs {
         else {
             $source = catfile( $opts{'dir_in'}, $source ) if $opts{'dir_in'};
             $result->{$source} = Config::MySQL::Reader->read_file($source);
-            say "Parsing $source, groups total : " . scalar
-              keys %{ $result->{$source} }
+            say "Parsing $source, params total : ". 
+              scalar map { keys %$_ } values %{ $result->{$source} }
               if $opts{'v'};
         }
     }
