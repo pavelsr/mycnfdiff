@@ -322,13 +322,15 @@ sub process_diff {
         for my $prm ( sort keys %{ $hash->{$grp} } ) {
 
             my $no_zero = {};
+            my $params_total = 0;
 
             while ( my ( $source, $value ) = each( %{ $hash->{$grp}{$prm} } ) )
             {
+                $params_total++;
                 if ( !defined $defaults && $value ) {  # may leave value
                     $res->{$source}{$grp}{$prm} = $value;
                 }
-
+                
                 $no_zero->{$source} = $value if ( $defaults && $value );
             }
 
@@ -339,7 +341,7 @@ sub process_diff {
             # and 
             # $res->{$_}{$grp}{$prm}
 
-            if ($defaults) {
+            if ( $defaults && ( $params_total == scalar keys %$no_zero ) ) {
                 
                 if ( ( scalar @uniq == 1 ) && !defined $defaults->{$grp}{$prm} ) {
                     my $x = ( $write_comment ? $uniq[0]. ' # compiled default is not set' : $uniq[0] );
